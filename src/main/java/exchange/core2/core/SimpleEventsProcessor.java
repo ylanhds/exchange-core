@@ -17,13 +17,26 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.ObjLongConsumer;
 
+/**
+ * 简单事件处理器，用于处理订单命令并分发相应的事件。
+ * 实现了 {@link ObjLongConsumer} 接口，消费一个 {@link OrderCommand} 和一个序列号。
+ */
 @RequiredArgsConstructor
 @Getter
 @Slf4j
 public class SimpleEventsProcessor implements ObjLongConsumer<OrderCommand> {
 
+    /**
+     * 事件处理器接口，用于分发各种事件。
+     */
     private final IEventsHandler eventsHandler;
 
+    /**
+     * 处理传入的订单命令，并分发相应的事件。
+     *
+     * @param cmd 订单命令对象
+     * @param seq 命令序列号
+     */
     @Override
     public void accept(OrderCommand cmd, long seq) {
         try {
@@ -35,6 +48,11 @@ public class SimpleEventsProcessor implements ObjLongConsumer<OrderCommand> {
         }
     }
 
+    /**
+     * 发送交易事件，包括减少订单事件和交易事件。
+     *
+     * @param cmd 订单命令对象
+     */
     private void sendTradeEvents(OrderCommand cmd) {
         final MatcherTradeEvent firstEvent = cmd.matcherEvent;
         if (firstEvent == null) {
@@ -64,6 +82,11 @@ public class SimpleEventsProcessor implements ObjLongConsumer<OrderCommand> {
         sendTradeEvent(cmd);
     }
 
+    /**
+     * 构造并发送交易事件。
+     *
+     * @param cmd 订单命令对象
+     */
     private void sendTradeEvent(OrderCommand cmd) {
 
         final MutableBoolean takerOrderCompleted = new MutableBoolean(false);
@@ -122,6 +145,11 @@ public class SimpleEventsProcessor implements ObjLongConsumer<OrderCommand> {
         }
     }
 
+    /**
+     * 构造并发送市场数据（订单簿）事件。
+     *
+     * @param cmd 订单命令对象
+     */
     private void sendMarketData(OrderCommand cmd) {
         final L2MarketData marketData = cmd.marketData;
         if (marketData != null) {
@@ -139,7 +167,12 @@ public class SimpleEventsProcessor implements ObjLongConsumer<OrderCommand> {
         }
     }
 
-
+    /**
+     * 根据命令类型构造并发送命令结果事件。
+     *
+     * @param cmd 订单命令对象
+     * @param seq 命令序列号
+     */
     private void sendCommandResult(OrderCommand cmd, long seq) {
 
         switch (cmd.command) {
@@ -195,6 +228,14 @@ public class SimpleEventsProcessor implements ObjLongConsumer<OrderCommand> {
 
     }
 
+    /**
+     * 构造并发送 API 命令结果事件。
+     *
+     * @param cmd         API 命令对象
+     * @param resultCode  命令执行结果码
+     * @param timestamp   时间戳
+     * @param seq         命令序列号
+     */
     private void sendApiCommandResult(ApiCommand cmd, CommandResultCode resultCode, long timestamp, long seq) {
         cmd.timestamp = timestamp;
         final IEventsHandler.ApiCommandResult commandResult = new IEventsHandler.ApiCommandResult(cmd, resultCode, seq);

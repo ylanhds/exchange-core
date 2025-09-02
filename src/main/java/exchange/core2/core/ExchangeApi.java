@@ -48,19 +48,41 @@ import java.util.function.Function;
 import java.util.function.LongConsumer;
 import java.util.stream.Stream;
 
+/**
+ * 交易所API接口类，用于向交易所核心提交各种命令和查询请求
+ */
 @Slf4j
 @RequiredArgsConstructor
 public final class ExchangeApi {
 
+    /**
+     * Disruptor环形缓冲区，用于发布订单命令
+     */
     private final RingBuffer<OrderCommand> ringBuffer;
+
+    /**
+     * LZ4压缩器，用于压缩二进制数据
+     */
     private final LZ4Compressor lz4Compressor;
 
-    // promises cache (TODO can be changed to queue)
+    /**
+     * 承诺缓存（用于异步命令结果回调）
+     * TODO 可以改为队列结构
+     */
     private final Map<Long, Consumer<OrderCommand>> promises = new ConcurrentHashMap<>();
 
+    /**
+     * 每条消息包含的long值数量
+     */
     public static final int LONGS_PER_MESSAGE = 5;
 
 
+    /**
+     * 处理命令执行结果
+     *
+     * @param seq 命令序列号
+     * @param cmd 订单命令
+     */
     public void processResult(final long seq, final OrderCommand cmd) {
 
 //        if (cmd.command == OrderCommandType.BINARY_DATA_COMMAND
@@ -72,6 +94,11 @@ public final class ExchangeApi {
         }
     }
 
+    /**
+     * 提交命令（同步方式）
+     *
+     * @param cmd API命令
+     */
     public void submitCommand(ApiCommand cmd) {
         //log.debug("{}", cmd);
 
@@ -104,10 +131,16 @@ public final class ExchangeApi {
         } else if (cmd instanceof ApiNop) {
             ringBuffer.publishEvent(NOP_TRANSLATOR, (ApiNop) cmd);
         } else {
-            throw new IllegalArgumentException("Unsupported command type: " + cmd.getClass().getSimpleName());
+            throw new IllegalArgumentException("不支持的命令类型: " + cmd.getClass().getSimpleName());
         }
     }
 
+    /**
+     * 提交命令（异步方式）
+     *
+     * @param cmd API命令
+     * @return 命令执行结果的CompletableFuture
+     */
     public CompletableFuture<CommandResultCode> submitCommandAsync(ApiCommand cmd) {
         //log.debug("{}", cmd);
 
@@ -138,10 +171,16 @@ public final class ExchangeApi {
         } else if (cmd instanceof ApiNop) {
             return submitCommandAsync(NOP_TRANSLATOR, (ApiNop) cmd);
         } else {
-            throw new IllegalArgumentException("Unsupported command type: " + cmd.getClass().getSimpleName());
+            throw new IllegalArgumentException("不支持的命令类型: " + cmd.getClass().getSimpleName());
         }
     }
 
+    /**
+     * 提交命令并返回完整响应（异步方式）
+     *
+     * @param cmd API命令
+     * @return 完整订单命令响应的CompletableFuture
+     */
     public CompletableFuture<OrderCommand> submitCommandAsyncFullResponse(ApiCommand cmd) {
 
         if (cmd instanceof ApiMoveOrder) {
@@ -167,11 +206,16 @@ public final class ExchangeApi {
         } else if (cmd instanceof ApiNop) {
             return submitCommandAsyncFullResponse(NOP_TRANSLATOR, (ApiNop) cmd);
         } else {
-            throw new IllegalArgumentException("Unsupported command type: " + cmd.getClass().getSimpleName());
+            throw new IllegalArgumentException("不支持的命令类型: " + cmd.getClass().getSimpleName());
         }
     }
 
 
+    /**
+     * 同步提交命令列表
+     *
+     * @param cmd 命令列表
+     */
     public void submitCommandsSync(List<? extends ApiCommand> cmd) {
         if (cmd.isEmpty()) {
             return;
@@ -181,20 +225,51 @@ public final class ExchangeApi {
         submitCommandAsync(cmd.get(cmd.size() - 1)).join();
     }
 
+    /**
+     * 同步提交命令流
+     *
+     * @param stream 命令流
+     */
     public void submitCommandsSync(Stream<? extends ApiCommand> stream) {
 
         stream.forEach(this::submitCommand);
         submitCommandAsync(ApiNop.builder().build()).join();
     }
 
+    /**
+     * 异步提交命令
+     *
+     * @param translator 事件转换器
+     * @param apiCommand API命令
+     * @param <T> 命令类型
+     * @return 命令执行结果码的CompletableFuture
+     */
     private <T extends ApiCommand> CompletableFuture<CommandResultCode> submitCommandAsync(EventTranslatorOneArg<OrderCommand, T> translator, final T apiCommand) {
         return submitCommandAsync(translator, apiCommand, c -> c.resultCode);
     }
 
+    /**
+     * 异步提交命令并返回完整响应
+     *
+     * @param translator 事件转换器
+     * @param apiCommand API命令
+     * @param <T> 命令类型
+     * @return 完整订单命令响应的CompletableFuture
+     */
     private <T extends ApiCommand> CompletableFuture<OrderCommand> submitCommandAsyncFullResponse(EventTranslatorOneArg<OrderCommand, T> translator, final T apiCommand) {
         return submitCommandAsync(translator, apiCommand, Function.identity());
     }
 
+    /**
+     * 异步提交命令的通用方法
+     *
+     * @param translator 事件转换器
+     * @param apiCommand API命令
+     * @param responseTranslator 响应转换器
+     * @param <T> 命令类型
+     * @param <R> 响应类型
+     * @return 响应结果的CompletableFuture
+     */
     private <T extends ApiCommand, R> CompletableFuture<R> submitCommandAsync(final EventTranslatorOneArg<OrderCommand, T> translator,
                                                                               final T apiCommand,
                                                                               final Function<OrderCommand, R> responseTranslator) {
@@ -210,6 +285,12 @@ public final class ExchangeApi {
         return future;
     }
 
+    /**
+     * 异步提交持久化命令
+     *
+     * @param apiCommand 持久化命令
+     * @return 命令执行结果码的CompletableFuture
+     */
     private CompletableFuture<CommandResultCode> submitPersistCommandAsync(final ApiPersistState apiCommand) {
 
         final CompletableFuture<CommandResultCode> future1 = new CompletableFuture<>();
@@ -223,6 +304,12 @@ public final class ExchangeApi {
         return future1.thenCombineAsync(future2, CommandResultCode::mergeToFirstFailed);
     }
 
+    /**
+     * 异步提交二进制数据命令
+     *
+     * @param data 二进制数据命令
+     * @return 命令执行结果码的CompletableFuture
+     */
     public CompletableFuture<CommandResultCode> submitBinaryDataAsync(final BinaryDataCommand data) {
 
         final CompletableFuture<CommandResultCode> future = new CompletableFuture<>();
@@ -231,13 +318,22 @@ public final class ExchangeApi {
                 OrderCommandType.BINARY_DATA_COMMAND,
                 data,
                 data.getBinaryCommandTypeCode(),
-                (int) System.nanoTime(), // can be any value because sequence is used for result identification, not transferId
+                (int) System.nanoTime(), // 可以是任意值，因为使用序列号来标识结果，而不是transferId
                 0L,
                 seq -> promises.put(seq, orderCommand -> future.complete(orderCommand.resultCode)));
 
         return future;
     }
 
+    /**
+     * 异步提交二进制命令
+     *
+     * @param data 二进制数据命令
+     * @param transferId 传输ID
+     * @param translator 响应转换器
+     * @param <R> 响应类型
+     * @return 响应结果的CompletableFuture
+     */
     public <R> CompletableFuture<R> submitBinaryCommandAsync(
             final BinaryDataCommand data,
             final int transferId,
@@ -252,6 +348,15 @@ public final class ExchangeApi {
         return future;
     }
 
+    /**
+     * 异步提交查询请求
+     *
+     * @param data 报告查询
+     * @param transferId 传输ID
+     * @param translator 响应转换器
+     * @param <R> 响应类型
+     * @return 响应结果的CompletableFuture
+     */
     public <R> CompletableFuture<R> submitQueryAsync(
             final ReportQuery<?> data,
             final int transferId,
@@ -266,6 +371,15 @@ public final class ExchangeApi {
         return future;
     }
 
+    /**
+     * 处理报告查询
+     *
+     * @param query 报告查询
+     * @param transferId 传输ID
+     * @param <Q> 查询类型
+     * @param <R> 结果类型
+     * @return 报告结果的CompletableFuture
+     */
     public <Q extends ReportQuery<R>, R extends ReportResult> CompletableFuture<R> processReport(final Q query, final int transferId) {
         return submitQueryAsync(
                 query,
@@ -274,6 +388,12 @@ public final class ExchangeApi {
                         OrderBookEventsHelper.deserializeEvents(cmd).values().parallelStream().map(Wire::bytes)));
     }
 
+    /**
+     * 发布二进制数据
+     *
+     * @param apiCmd API二进制数据命令
+     * @param endSeqConsumer 结束序列消费者
+     */
     public void publishBinaryData(final ApiBinaryDataCommand apiCmd, final LongConsumer endSeqConsumer) {
 
         publishBinaryData(
@@ -285,6 +405,12 @@ public final class ExchangeApi {
                 endSeqConsumer);
     }
 
+    /**
+     * 发布查询请求
+     *
+     * @param apiCmd API报告查询
+     * @param endSeqConsumer 结束序列消费者
+     */
     public void publishQuery(final ApiReportQuery apiCmd, final LongConsumer endSeqConsumer) {
         publishBinaryData(
                 OrderCommandType.BINARY_DATA_QUERY,
@@ -295,6 +421,16 @@ public final class ExchangeApi {
                 endSeqConsumer);
     }
 
+    /**
+     * 发布二进制数据的核心方法
+     *
+     * @param cmdType 命令类型
+     * @param data 可写入字节的数据
+     * @param dataTypeCode 数据类型代码
+     * @param transferId 传输ID
+     * @param timestamp 时间戳
+     * @param endSeqConsumer 结束序列消费者
+     */
     private void publishBinaryData(final OrderCommandType cmdType,
                                    final WriteBytesMarshallable data,
                                    final int dataTypeCode,
@@ -311,7 +447,7 @@ public final class ExchangeApi {
 
 //        log.debug("longsArrayData[{}] n={}", longsArrayData.length, totalNumMessagesToClaim);
 
-        // max fragment size is quarter of ring buffer
+        // 最大片段大小是环形缓冲区的四分之一
         final int batchSize = ringBuffer.getBufferSize() / 4;
 
         int offset = 0;
@@ -333,6 +469,18 @@ public final class ExchangeApi {
 
     }
 
+    /**
+     * 发布二进制消息片段
+     *
+     * @param cmdType 命令类型
+     * @param transferId 传输ID
+     * @param timestamp 时间戳
+     * @param endSeqConsumer 结束序列消费者
+     * @param longsArrayData long数组数据
+     * @param fragmentSize 片段大小
+     * @param offset 偏移量
+     * @param isLastFragment 是否为最后一个片段
+     */
     private void publishBinaryMessageFragment(OrderCommandType cmdType,
                                               int transferId,
                                               long timestamp,
@@ -374,17 +522,23 @@ public final class ExchangeApi {
                 ptr += LONGS_PER_MESSAGE;
             }
         } catch (final Exception ex) {
-            log.error("Binary commands processing exception: ", ex);
+            log.error("二进制命令处理异常: ", ex);
 
         } finally {
             if (isLastFragment) {
-                // report last sequence before actually publishing data
+                // 在实际发布数据之前报告最后一个序列
                 endSeqConsumer.accept(highSeq);
             }
             ringBuffer.publish(lowSeq, highSeq);
         }
     }
 
+    /**
+     * 发布持久化命令
+     *
+     * @param api 持久化状态命令
+     * @param seqConsumer 序列消费者
+     */
     private void publishPersistCmd(final ApiPersistState api,
                                    final LongLongConsumer seqConsumer) {
 
@@ -392,7 +546,7 @@ public final class ExchangeApi {
         long firstSeq = secondSeq - 1;
 
         try {
-            // will be ignored by risk handlers, but processed by matching engine
+            // 将被风险处理器忽略，但由匹配引擎处理
             final OrderCommand cmdMatching = ringBuffer.get(firstSeq);
             cmdMatching.command = OrderCommandType.PERSIST_STATE_MATCHING;
             cmdMatching.orderId = api.dumpId;
@@ -404,7 +558,7 @@ public final class ExchangeApi {
 
             //log.debug("seq={} cmd.command={} data={}", firstSeq, cmdMatching.command, cmdMatching.price);
 
-            // sequential command will make risk handler to create snapshot
+            // 顺序命令将使风险处理器创建快照
             final OrderCommand cmdRisk = ringBuffer.get(secondSeq);
             cmdRisk.command = OrderCommandType.PERSIST_STATE_RISK;
             cmdRisk.orderId = api.dumpId;
@@ -416,7 +570,7 @@ public final class ExchangeApi {
 
             //log.debug("seq={} cmd.command={} data={}", firstSeq, cmdMatching.command, cmdMatching.price);
 
-            // short delay to reduce probability of batching both commands together in R1
+            // 短暂延迟以减少R1中将两个命令批处理在一起的概率
         } finally {
             seqConsumer.accept(firstSeq, secondSeq);
             ringBuffer.publish(firstSeq, secondSeq);
@@ -424,6 +578,9 @@ public final class ExchangeApi {
     }
 
 
+    /**
+     * 新订单命令转换器
+     */
     private static final EventTranslatorOneArg<OrderCommand, ApiPlaceOrder> NEW_ORDER_TRANSLATOR = (cmd, seq, api) -> {
         cmd.command = OrderCommandType.PLACE_ORDER;
         cmd.price = api.price;
@@ -439,6 +596,9 @@ public final class ExchangeApi {
         cmd.resultCode = CommandResultCode.NEW;
     };
 
+    /**
+     * 移动订单命令转换器
+     */
     private static final EventTranslatorOneArg<OrderCommand, ApiMoveOrder> MOVE_ORDER_TRANSLATOR = (cmd, seq, api) -> {
         cmd.command = OrderCommandType.MOVE_ORDER;
         cmd.price = api.newPrice;
@@ -449,6 +609,9 @@ public final class ExchangeApi {
         cmd.resultCode = CommandResultCode.NEW;
     };
 
+    /**
+     * 取消订单命令转换器
+     */
     private static final EventTranslatorOneArg<OrderCommand, ApiCancelOrder> CANCEL_ORDER_TRANSLATOR = (cmd, seq, api) -> {
         cmd.command = OrderCommandType.CANCEL_ORDER;
         cmd.orderId = api.orderId;
@@ -458,6 +621,9 @@ public final class ExchangeApi {
         cmd.resultCode = CommandResultCode.NEW;
     };
 
+    /**
+     * 减少订单命令转换器
+     */
     private static final EventTranslatorOneArg<OrderCommand, ApiReduceOrder> REDUCE_ORDER_TRANSLATOR = (cmd, seq, api) -> {
         cmd.command = OrderCommandType.REDUCE_ORDER;
         cmd.orderId = api.orderId;
@@ -468,6 +634,9 @@ public final class ExchangeApi {
         cmd.resultCode = CommandResultCode.NEW;
     };
 
+    /**
+     * 订单簿请求命令转换器
+     */
     private static final EventTranslatorOneArg<OrderCommand, ApiOrderBookRequest> ORDER_BOOK_REQUEST_TRANSLATOR = (cmd, seq, api) -> {
         cmd.command = OrderCommandType.ORDER_BOOK_REQUEST;
         cmd.symbol = api.symbol;
@@ -476,6 +645,9 @@ public final class ExchangeApi {
         cmd.resultCode = CommandResultCode.NEW;
     };
 
+    /**
+     * 添加用户命令转换器
+     */
     private static final EventTranslatorOneArg<OrderCommand, ApiAddUser> ADD_USER_TRANSLATOR = (cmd, seq, api) -> {
         cmd.command = OrderCommandType.ADD_USER;
         cmd.uid = api.uid;
@@ -483,6 +655,9 @@ public final class ExchangeApi {
         cmd.resultCode = CommandResultCode.NEW;
     };
 
+    /**
+     * 暂停用户命令转换器
+     */
     private static final EventTranslatorOneArg<OrderCommand, ApiSuspendUser> SUSPEND_USER_TRANSLATOR = (cmd, seq, api) -> {
         cmd.command = OrderCommandType.SUSPEND_USER;
         cmd.uid = api.uid;
@@ -490,6 +665,9 @@ public final class ExchangeApi {
         cmd.resultCode = CommandResultCode.NEW;
     };
 
+    /**
+     * 恢复用户命令转换器
+     */
     private static final EventTranslatorOneArg<OrderCommand, ApiResumeUser> RESUME_USER_TRANSLATOR = (cmd, seq, api) -> {
         cmd.command = OrderCommandType.RESUME_USER;
         cmd.uid = api.uid;
@@ -497,6 +675,9 @@ public final class ExchangeApi {
         cmd.resultCode = CommandResultCode.NEW;
     };
 
+    /**
+     * 调整用户余额命令转换器
+     */
     private static final EventTranslatorOneArg<OrderCommand, ApiAdjustUserBalance> ADJUST_USER_BALANCE_TRANSLATOR = (cmd, seq, api) -> {
         cmd.command = OrderCommandType.BALANCE_ADJUSTMENT;
         cmd.orderId = api.transactionId;
@@ -508,18 +689,37 @@ public final class ExchangeApi {
         cmd.resultCode = CommandResultCode.NEW;
     };
 
+    /**
+     * 重置命令转换器
+     */
     private static final EventTranslatorOneArg<OrderCommand, ApiReset> RESET_TRANSLATOR = (cmd, seq, api) -> {
         cmd.command = OrderCommandType.RESET;
         cmd.timestamp = api.timestamp;
         cmd.resultCode = CommandResultCode.NEW;
     };
 
+    /**
+     * 空操作命令转换器
+     */
     private static final EventTranslatorOneArg<OrderCommand, ApiNop> NOP_TRANSLATOR = (cmd, seq, api) -> {
         cmd.command = OrderCommandType.NOP;
         cmd.timestamp = api.timestamp;
         cmd.resultCode = CommandResultCode.NEW;
     };
 
+    /**
+     * 发布二进制数据（用于重放日志）
+     *
+     * @param serviceFlags 服务标志
+     * @param eventsGroup 事件组
+     * @param timestampNs 时间戳（纳秒）
+     * @param lastFlag 最后标志
+     * @param word0 数据字0
+     * @param word1 数据字1
+     * @param word2 数据字2
+     * @param word3 数据字3
+     * @param word4 数据字4
+     */
     public void binaryData(int serviceFlags, long eventsGroup, long timestampNs, byte lastFlag, long word0, long word1, long word2, long word3, long word4) {
         ringBuffer.publishEvent(((cmd, seq) -> {
 
@@ -540,6 +740,12 @@ public final class ExchangeApi {
         }));
     }
 
+    /**
+     * 创建用户
+     *
+     * @param userId 用户ID
+     * @param callback 回调函数
+     */
     public void createUser(long userId, Consumer<OrderCommand> callback) {
         ringBuffer.publishEvent(((cmd, seq) -> {
             cmd.command = OrderCommandType.ADD_USER;
@@ -553,6 +759,12 @@ public final class ExchangeApi {
         }));
     }
 
+    /**
+     * 暂停用户
+     *
+     * @param userId 用户ID
+     * @param callback 回调函数
+     */
     public void suspendUser(long userId, Consumer<OrderCommand> callback) {
         ringBuffer.publishEvent(((cmd, seq) -> {
             cmd.command = OrderCommandType.SUSPEND_USER;
@@ -566,6 +778,12 @@ public final class ExchangeApi {
         }));
     }
 
+    /**
+     * 恢复用户
+     *
+     * @param userId 用户ID
+     * @param callback 回调函数
+     */
     public void resumeUser(long userId, Consumer<OrderCommand> callback) {
         ringBuffer.publishEvent(((cmd, seq) -> {
             cmd.command = OrderCommandType.RESUME_USER;
@@ -579,6 +797,14 @@ public final class ExchangeApi {
         }));
     }
 
+    /**
+     * 创建用户（用于重放日志）
+     *
+     * @param serviceFlags 服务标志
+     * @param eventsGroup 事件组
+     * @param timestampNs 时间戳（纳秒）
+     * @param userId 用户ID
+     */
     public void createUser(int serviceFlags, long eventsGroup, long timestampNs, long userId) {
         ringBuffer.publishEvent(((cmd, seq) -> {
 
@@ -595,6 +821,14 @@ public final class ExchangeApi {
         }));
     }
 
+    /**
+     * 暂停用户（用于重放日志）
+     *
+     * @param serviceFlags 服务标志
+     * @param eventsGroup 事件组
+     * @param timestampNs 时间戳（纳秒）
+     * @param userId 用户ID
+     */
     public void suspendUser(int serviceFlags, long eventsGroup, long timestampNs, long userId) {
         ringBuffer.publishEvent(((cmd, seq) -> {
 
@@ -611,6 +845,14 @@ public final class ExchangeApi {
         }));
     }
 
+    /**
+     * 恢复用户（用于重放日志）
+     *
+     * @param serviceFlags 服务标志
+     * @param eventsGroup 事件组
+     * @param timestampNs 时间戳（纳秒）
+     * @param userId 用户ID
+     */
     public void resumeUser(int serviceFlags, long eventsGroup, long timestampNs, long userId) {
         ringBuffer.publishEvent(((cmd, seq) -> {
 
@@ -627,6 +869,16 @@ public final class ExchangeApi {
         }));
     }
 
+    /**
+     * 调整用户余额
+     *
+     * @param uid 用户ID
+     * @param transactionId 交易ID
+     * @param currency 币种
+     * @param longAmount 金额
+     * @param adjustmentType 调整类型
+     * @param callback 回调函数
+     */
     public void balanceAdjustment(long uid,
                                   long transactionId,
                                   int currency,
@@ -650,6 +902,18 @@ public final class ExchangeApi {
 
     }
 
+    /**
+     * 调整用户余额（用于重放日志）
+     *
+     * @param serviceFlags 服务标志
+     * @param eventsGroup 事件组
+     * @param timestampNs 时间戳（纳秒）
+     * @param uid 用户ID
+     * @param transactionId 交易ID
+     * @param currency 币种
+     * @param longAmount 金额
+     * @param adjustmentType 调整类型
+     */
     public void balanceAdjustment(int serviceFlags,
                                   long eventsGroup,
                                   long timestampNs,
@@ -675,6 +939,13 @@ public final class ExchangeApi {
     }
 
 
+    /**
+     * 订单簿请求
+     *
+     * @param symbolId 交易对ID
+     * @param depth 深度
+     * @param callback 回调函数
+     */
     public void orderBookRequest(int symbolId, int depth, Consumer<OrderCommand> callback) {
 
         ringBuffer.publishEvent(((cmd, seq) -> {
@@ -691,6 +962,13 @@ public final class ExchangeApi {
 
     }
 
+    /**
+     * 异步请求订单簿
+     *
+     * @param symbolId 交易对ID
+     * @param depth 深度
+     * @return L2市场数据的CompletableFuture
+     */
     public CompletableFuture<L2MarketData> requestOrderBookAsync(int symbolId, int depth) {
 
         final CompletableFuture<L2MarketData> future = new CompletableFuture<>();
@@ -710,6 +988,20 @@ public final class ExchangeApi {
         return future;
     }
 
+    /**
+     * 下新订单
+     *
+     * @param userCookie 用户Cookie
+     * @param price 价格
+     * @param reservedBidPrice 预留买单价格
+     * @param size 数量
+     * @param action 订单动作
+     * @param orderType 订单类型
+     * @param symbol 交易对
+     * @param uid 用户ID
+     * @param callback 回调函数
+     * @return 命令序列号
+     */
     public long placeNewOrder(
             int userCookie,
             long price,
@@ -746,6 +1038,22 @@ public final class ExchangeApi {
     }
 
 
+    /**
+     * 下新订单（用于重放日志）
+     *
+     * @param serviceFlags 服务标志
+     * @param eventsGroup 事件组
+     * @param timestampNs 时间戳（纳秒）
+     * @param orderId 订单ID
+     * @param userCookie 用户Cookie
+     * @param price 价格
+     * @param reservedBidPrice 预留买单价格
+     * @param size 数量
+     * @param action 订单动作
+     * @param orderType 订单类型
+     * @param symbol 交易对
+     * @param uid 用户ID
+     */
     public void placeNewOrder(int serviceFlags,
                               long eventsGroup,
                               long timestampNs,
@@ -779,6 +1087,15 @@ public final class ExchangeApi {
         });
     }
 
+    /**
+     * 移动订单
+     *
+     * @param price 价格
+     * @param orderId 订单ID
+     * @param symbol 交易对
+     * @param uid 用户ID
+     * @param callback 回调函数
+     */
     public void moveOrder(
             long price,
             long orderId,
@@ -800,6 +1117,17 @@ public final class ExchangeApi {
         });
     }
 
+    /**
+     * 移动订单（用于重放日志）
+     *
+     * @param serviceFlags 服务标志
+     * @param eventsGroup 事件组
+     * @param timestampNs 时间戳（纳秒）
+     * @param price 价格
+     * @param orderId 订单ID
+     * @param symbol 交易对
+     * @param uid 用户ID
+     */
     public void moveOrder(int serviceFlags,
                           long eventsGroup,
                           long timestampNs,
@@ -824,6 +1152,14 @@ public final class ExchangeApi {
         });
     }
 
+    /**
+     * 取消订单
+     *
+     * @param orderId 订单ID
+     * @param symbol 交易对
+     * @param uid 用户ID
+     * @param callback 回调函数
+     */
     public void cancelOrder(
             long orderId,
             int symbol,
@@ -844,6 +1180,16 @@ public final class ExchangeApi {
 
     }
 
+    /**
+     * 取消订单（用于重放日志）
+     *
+     * @param serviceFlags 服务标志
+     * @param eventsGroup 事件组
+     * @param timestampNs 时间戳（纳秒）
+     * @param orderId 订单ID
+     * @param symbol 交易对
+     * @param uid 用户ID
+     */
     public void cancelOrder(int serviceFlags,
                             long eventsGroup,
                             long timestampNs,
@@ -866,6 +1212,15 @@ public final class ExchangeApi {
         });
     }
 
+    /**
+     * 减少订单
+     *
+     * @param reduceSize 减少量
+     * @param orderId 订单ID
+     * @param symbol 交易对
+     * @param uid 用户ID
+     * @param callback 回调函数
+     */
     public void reduceOrder(
             long reduceSize,
             long orderId,
@@ -887,6 +1242,17 @@ public final class ExchangeApi {
         });
     }
 
+    /**
+     * 减少订单（用于重放日志）
+     *
+     * @param serviceFlags 服务标志
+     * @param eventsGroup 事件组
+     * @param timestampNs 时间戳（纳秒）
+     * @param reduceSize 减少量
+     * @param orderId 订单ID
+     * @param symbol 交易对
+     * @param uid 用户ID
+     */
     public void reduceOrder(int serviceFlags,
                             long eventsGroup,
                             long timestampNs,
@@ -911,6 +1277,12 @@ public final class ExchangeApi {
         });
     }
 
+    /**
+     * 分组控制
+     *
+     * @param timestampNs 时间戳（纳秒）
+     * @param mode 模式
+     */
     public void groupingControl(long timestampNs, long mode) {
 
         ringBuffer.publishEvent((cmd, seq) -> {
@@ -923,6 +1295,11 @@ public final class ExchangeApi {
 
     }
 
+    /**
+     * 重置
+     *
+     * @param timestampNs 时间戳（纳秒）
+     */
     public void reset(long timestampNs) {
 
         ringBuffer.publishEvent((cmd, seq) -> {

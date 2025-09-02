@@ -45,90 +45,117 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 /**
- * Main exchange core class.
- * Builds configuration and starts disruptor.
+ * 主要的交易所核心类。
+ * 构建配置并启动Disruptor。
  */
 @Slf4j
 public final class ExchangeCore {
 
+    /**
+     * Disruptor实例，用于高性能事件处理
+     */
     private final Disruptor<OrderCommand> disruptor;
 
+    /**
+     * 环形缓冲区，用于存储订单命令
+     */
     private final RingBuffer<OrderCommand> ringBuffer;
 
+    /**
+     * 交易所API接口
+     */
     private final ExchangeApi api;
 
+    /**
+     * 序列化处理器，用于持久化和恢复状态
+     */
     private final ISerializationProcessor serializationProcessor;
 
+    /**
+     * 交易所配置
+     */
     private final ExchangeConfiguration exchangeConfiguration;
 
-    // core can be started and stopped only once
+    // 核心只能启动和停止一次
     private boolean started = false;
     private boolean stopped = false;
 
-    // enable MatcherTradeEvent pooling
+    // 是否启用MatcherTradeEvent对象池
     public static final boolean EVENTS_POOLING = false;
 
     /**
-     * Exchange core constructor.
-     *  @param resultsConsumer       - custom consumer of processed commands
-     * @param exchangeConfiguration - exchange configuration
+     * 交易所核心构造函数。
+     *
+     * @param resultsConsumer       - 已处理命令的自定义消费者
+     * @param exchangeConfiguration - 交易所配置
      */
     @Builder
     public ExchangeCore(final ObjLongConsumer<OrderCommand> resultsConsumer,
                         final ExchangeConfiguration exchangeConfiguration) {
 
-        log.debug("Building exchange core from configuration: {}", exchangeConfiguration);
+        log.debug("根据配置构建交易所核心: {}", exchangeConfiguration);
 
         this.exchangeConfiguration = exchangeConfiguration;
 
+        // 获取性能配置
         final PerformanceConfiguration perfCfg = exchangeConfiguration.getPerformanceCfg();
 
+        // 获取环形缓冲区大小
         final int ringBufferSize = perfCfg.getRingBufferSize();
 
+        // 获取线程工厂
         final ThreadFactory threadFactory = perfCfg.getThreadFactory();
 
+        // 获取等待策略
         final CoreWaitStrategy coreWaitStrategy = perfCfg.getWaitStrategy();
 
+        // 创建Disruptor实例
         this.disruptor = new Disruptor<>(
                 OrderCommand::new,
                 ringBufferSize,
                 threadFactory,
-                ProducerType.MULTI, // multiple gateway threads are writing
+                ProducerType.MULTI, // 多个网关线程写入
                 coreWaitStrategy.getDisruptorWaitStrategyFactory().get());
 
+        // 获取环形缓冲区
         this.ringBuffer = disruptor.getRingBuffer();
 
+        // 创建交易所API实例
         this.api = new ExchangeApi(ringBuffer, perfCfg.getBinaryCommandsLz4CompressorFactory().get());
 
+        // 获取订单簿工厂
         final IOrderBook.OrderBookFactory orderBookFactory = perfCfg.getOrderBookFactory();
 
+        // 获取匹配引擎和风险引擎数量
         final int matchingEnginesNum = perfCfg.getMatchingEnginesNum();
         final int riskEnginesNum = perfCfg.getRiskEnginesNum();
 
+        // 获取序列化配置
         final SerializationConfiguration serializationCfg = exchangeConfiguration.getSerializationCfg();
 
-        // creating serialization processor
+        // 创建序列化处理器
         serializationProcessor = serializationCfg.getSerializationProcessorFactory().apply(exchangeConfiguration);
 
-        // creating shared objects pool
+        // 创建共享对象池
         final int poolInitialSize = (matchingEnginesNum + riskEnginesNum) * 8;
         final int chainLength = EVENTS_POOLING ? 1024 : 1;
         final SharedPool sharedPool = new SharedPool(poolInitialSize * 4, poolInitialSize, chainLength);
 
-        // creating and attaching exceptions handler
+        // 创建并附加异常处理器
         final DisruptorExceptionHandler<OrderCommand> exceptionHandler = new DisruptorExceptionHandler<>("main", (ex, seq) -> {
-            log.error("Exception thrown on sequence={}", seq, ex);
-            // TODO re-throw exception on publishing
+            log.error("在序列={}上抛出异常", seq, ex);
+            // TODO 在发布时重新抛出异常
             ringBuffer.publishEvent(SHUTDOWN_SIGNAL_TRANSLATOR);
             disruptor.shutdown();
         });
 
+        // 设置默认异常处理器
         disruptor.setDefaultExceptionHandler(exceptionHandler);
 
-        // advice completable future to use the same CPU socket as disruptor
+        // 建议CompletableFuture使用与Disruptor相同的CPU插槽
         final ExecutorService loaderExecutor = Executors.newFixedThreadPool(matchingEnginesNum + riskEnginesNum, threadFactory);
 
-        // start creating matching engines
+        // 开始创建匹配引擎
         final Map<Integer, CompletableFuture<MatchingEngineRouter>> matchingEngineFutures = IntStream.range(0, matchingEnginesNum)
                 .boxed()
                 .collect(Collectors.toMap(
@@ -137,9 +164,9 @@ public final class ExchangeCore {
                                 () -> new MatchingEngineRouter(shardId, matchingEnginesNum, serializationProcessor, orderBookFactory, sharedPool, exchangeConfiguration),
                                 loaderExecutor)));
 
-        // TODO create processors in same thread we will execute it??
+        // TODO 在将要执行的同一线程中创建处理器??
 
-        // start creating risk engines
+        // 开始创建风险引擎
         final Map<Integer, CompletableFuture<RiskEngine>> riskEngineFutures = IntStream.range(0, riskEnginesNum)
                 .boxed()
                 .collect(Collectors.toMap(
@@ -148,25 +175,28 @@ public final class ExchangeCore {
                                 () -> new RiskEngine(shardId, riskEnginesNum, serializationProcessor, sharedPool, exchangeConfiguration),
                                 loaderExecutor)));
 
+        // 创建匹配引擎事件处理器
         final EventHandler<OrderCommand>[] matchingEngineHandlers = matchingEngineFutures.values().stream()
                 .map(CompletableFuture::join)
                 .map(mer -> (EventHandler<OrderCommand>) (cmd, seq, eob) -> mer.processOrder(seq, cmd))
                 .toArray(ExchangeCore::newEventHandlersArray);
 
+        // 获取风险引擎映射
         final Map<Integer, RiskEngine> riskEngines = riskEngineFutures.entrySet().stream()
                 .collect(Collectors.toMap(
                         Map.Entry::getKey,
                         entry -> entry.getValue().join()));
 
 
+        // 创建两步处理器列表
         final List<TwoStepMasterProcessor> procR1 = new ArrayList<>(riskEnginesNum);
         final List<TwoStepSlaveProcessor> procR2 = new ArrayList<>(riskEnginesNum);
 
-        // 1. grouping processor (G)
+        // 1. 分组处理器 (G)
         final EventHandlerGroup<OrderCommand> afterGrouping =
                 disruptor.handleEventsWith((rb, bs) -> new GroupingProcessor(rb, rb.newBarrier(bs), perfCfg, coreWaitStrategy, sharedPool));
 
-        // 2. [journaling (J)] in parallel with risk hold (R1) + matching engine (ME)
+        // 2. [日志记录 (J)] 与 风险持有 (R1) + 匹配引擎 (ME) 并行处理
 
         boolean enableJournaling = serializationCfg.isEnableJournaling();
         final EventHandler<OrderCommand> jh = enableJournaling ? serializationProcessor::writeToJournal : null;
@@ -175,6 +205,7 @@ public final class ExchangeCore {
             afterGrouping.handleEventsWith(jh);
         }
 
+        // 为每个风险引擎添加风险持有处理器
         riskEngines.forEach((idx, riskEngine) -> afterGrouping.handleEventsWith(
                 (rb, bs) -> {
                     final TwoStepMasterProcessor r1 = new TwoStepMasterProcessor(rb, rb.newBarrier(bs), riskEngine::preProcessCommand, exceptionHandler, coreWaitStrategy, "R1_" + idx);
@@ -182,11 +213,13 @@ public final class ExchangeCore {
                     return r1;
                 }));
 
+        // 在风险持有处理器之后处理匹配引擎
         disruptor.after(procR1.toArray(new TwoStepMasterProcessor[0])).handleEventsWith(matchingEngineHandlers);
 
-        // 3. risk release (R2) after matching engine (ME)
+        // 3. 匹配引擎 (ME) 之后的风险释放 (R2)
         final EventHandlerGroup<OrderCommand> afterMatchingEngine = disruptor.after(matchingEngineHandlers);
 
+        // 为每个风险引擎添加风险释放处理器
         riskEngines.forEach((idx, riskEngine) -> afterMatchingEngine.handleEventsWith(
                 (rb, bs) -> {
                     final TwoStepSlaveProcessor r2 = new TwoStepSlaveProcessor(rb, rb.newBarrier(bs), riskEngine::handlerRiskRelease, exceptionHandler, "R2_" + idx);
@@ -195,21 +228,24 @@ public final class ExchangeCore {
                 }));
 
 
-        // 4. results handler (E) after matching engine (ME) + [journaling (J)]
+        // 4. 结果处理器 (E) 在匹配引擎 (ME) + [日志记录 (J)] 之后
         final EventHandlerGroup<OrderCommand> mainHandlerGroup = enableJournaling
                 ? disruptor.after(arraysAddHandler(matchingEngineHandlers, jh))
                 : afterMatchingEngine;
 
+        // 创建结果处理器
         final ResultsHandler resultsHandler = new ResultsHandler(resultsConsumer);
 
+        // 处理最终结果
         mainHandlerGroup.handleEventsWith((cmd, seq, eob) -> {
             resultsHandler.onEvent(cmd, seq, eob);
-            api.processResult(seq, cmd); // TODO SLOW ?(volatile operations)
+            api.processResult(seq, cmd); // TODO 慢 ?(volatile操作)
         });
 
-        // attach slave processors to master processor
+        // 将从处理器附加到主处理器
         IntStream.range(0, riskEnginesNum).forEach(i -> procR1.get(i).setSlaveProcessor(procR2.get(i)));
 
+        // 关闭加载执行器
         try {
             loaderExecutor.shutdown();
             loaderExecutor.awaitTermination(1, TimeUnit.SECONDS);
@@ -218,64 +254,84 @@ public final class ExchangeCore {
         }
     }
 
+    /**
+     * 启动Disruptor
+     */
     public synchronized void startup() {
         if (!started) {
-            log.debug("Starting disruptor...");
+            log.debug("启动Disruptor...");
             disruptor.start();
             started = true;
 
+            // 重放日志并启用日志记录
             serializationProcessor.replayJournalFullAndThenEnableJouraling(exchangeConfiguration.getInitStateCfg(), api);
         }
     }
 
     /**
-     * Provides ExchangeApi instance.
+     * 提供ExchangeApi实例。
      *
-     * @return ExchangeApi instance (always same object)
+     * @return ExchangeApi实例（始终是同一对象）
      */
     public ExchangeApi getApi() {
         return api;
     }
 
+    /**
+     * 关闭信号事件转换器
+     */
     private static final EventTranslator<OrderCommand> SHUTDOWN_SIGNAL_TRANSLATOR = (cmd, seq) -> {
         cmd.command = OrderCommandType.SHUTDOWN_SIGNAL;
         cmd.resultCode = CommandResultCode.NEW;
     };
 
     /**
-     * shut down disruptor
+     * 关闭Disruptor
      */
     public synchronized void shutdown() {
         shutdown(-1, TimeUnit.MILLISECONDS);
     }
 
     /**
-     * Will throw IllegalStateException if an exchange core can not stop gracefully.
+     * 如果交易所核心无法正常停止，将抛出IllegalStateException。
      *
-     * @param timeout  the amount of time to wait for all events to be processed. <code>-1</code> will give an infinite timeout
-     * @param timeUnit the unit the timeOut is specified in
+     * @param timeout  等待所有事件处理完成的时间。<code>-1</code>表示无限超时
+     * @param timeUnit 超时时间的单位
      */
     public synchronized void shutdown(final long timeout, final TimeUnit timeUnit) {
         if (!stopped) {
             stopped = true;
-            // TODO stop accepting new events first
+            // TODO 首先停止接受新事件
             try {
-                log.info("Shutdown disruptor...");
+                log.info("关闭Disruptor...");
                 ringBuffer.publishEvent(SHUTDOWN_SIGNAL_TRANSLATOR);
                 disruptor.shutdown(timeout, timeUnit);
-                log.info("Disruptor stopped");
+                log.info("Disruptor已停止");
             } catch (TimeoutException e) {
-                throw new IllegalStateException("could not stop a disruptor gracefully. Not all events may be executed.");
+                throw new IllegalStateException("无法正常停止Disruptor。可能并非所有事件都已执行。");
             }
         }
     }
 
+    /**
+     * 向事件处理器数组添加额外的处理器
+     *
+     * @param handlers 原始事件处理器数组
+     * @param extraHandler 额外的事件处理器
+     * @return 包含额外处理器的新数组
+     */
     private static EventHandler<OrderCommand>[] arraysAddHandler(EventHandler<OrderCommand>[] handlers, EventHandler<OrderCommand> extraHandler) {
         final EventHandler<OrderCommand>[] result = Arrays.copyOf(handlers, handlers.length + 1);
         result[handlers.length] = extraHandler;
         return result;
     }
 
+    /**
+     * 创建指定大小的事件处理器数组
+     *
+     * @param size 数组大小
+     * @return 事件处理器数组
+     */
     @SuppressWarnings(value = {"unchecked"})
     private static EventHandler<OrderCommand>[] newEventHandlersArray(int size) {
         return new EventHandler[size];
