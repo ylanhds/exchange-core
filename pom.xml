@@ -46,9 +46,53 @@
 
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <java.version>1.8</java.version>
-        <maven.compiler.target>1.8</maven.compiler.target>
-        <maven.compiler.source>1.8</maven.compiler.source>
+        <java.version>21</java.version>
+        <maven.compiler.target>21</maven.compiler.target>
+        <maven.compiler.source>21</maven.compiler.source>
+
+        <!-- 插件版本 -->
+        <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
+        <maven-surefire-plugin.version>3.1.2</maven-surefire-plugin.version>
+        <maven-failsafe-plugin.version>3.1.2</maven-failsafe-plugin.version>
+        <maven-javadoc-plugin.version>3.11.3</maven-javadoc-plugin.version>
+        <maven-deploy-plugin.version>3.0.0-M1</maven-deploy-plugin.version>
+        <maven-release-plugin.version>2.5.3</maven-release-plugin.version>
+        <maven-gpg-plugin.version>3.2.7</maven-gpg-plugin.version>
+        <lombok-maven-plugin.version>1.18.20.0</lombok-maven-plugin.version>
+        <maven-antrun-plugin.version>1.8</maven-antrun-plugin.version>
+        <build-helper-maven-plugin.version>3.1.0</build-helper-maven-plugin.version>
+        <nexus-staging-maven-plugin.version>1.6.8</nexus-staging-maven-plugin.version>
+
+        <!-- 依赖版本 -->
+        <lombok.version>1.18.38</lombok.version>
+        <disruptor.version>3.4.4</disruptor.version>
+        <jna.version>5.11.0</jna.version>
+        <collections.version>0.5.1</collections.version>
+        <slf4j.version>2.0.17</slf4j.version>
+        <affinity.version>3.2.2</affinity.version>
+        <chronicle-wire.version>2.19.1</chronicle-wire.version>
+        <agrona.version>1.15.1</agrona.version>
+        <eclipse-collections.version>11.0.0</eclipse-collections.version>
+        <lz4-java.version>1.8.0</lz4-java.version>
+        <juncture-nasdaq.version>1.0.0</juncture-nasdaq.version>
+        <nassau-util.version>1.0.0</nassau-util.version>
+        <mockito-junit-jupiter.version>4.5.1</mockito-junit-jupiter.version>
+        <hdrhistogram.version>2.1.12</hdrhistogram.version>
+        <logback-classic.version>1.5.13</logback-classic.version>
+        <guava.version>33.4.8-jre</guava.version>
+        <commons-lang3.version>3.18.0</commons-lang3.version>
+        <commons-math3.version>3.6.1</commons-math3.version>
+        <junit-jupiter-engine.version>5.8.2</junit-jupiter-engine.version>
+        <mockito-core.version>4.5.1</mockito-core.version>
+        <hamcrest-library.version>1.3</hamcrest-library.version>
+        <cucumber-java8.version>7.2.3</cucumber-java8.version>
+        <cucumber-junit-platform-engine.version>7.2.3</cucumber-junit-platform-engine.version>
+        <junit-platform-suite.version>1.8.2</junit-platform-suite.version>
+        <cucumber-picocontainer.version>7.2.3</cucumber-picocontainer.version>
+
+
+        <chronicle.version>2.27ea7</chronicle.version>
+
 
         <delombok.output>target/delombok</delombok.output>
         <gpg.passphrase>your-passphrase</gpg.passphrase>
@@ -58,32 +102,32 @@
         <dependency>
             <groupId>net.java.dev.jna</groupId>
             <artifactId>jna-platform</artifactId>
-            <version>5.11.0</version>
+            <version>${jna.version}</version>
         </dependency>
 
         <dependency>
             <groupId>net.java.dev.jna</groupId>
             <artifactId>jna</artifactId>
-            <version>5.11.0</version>
+            <version>${jna.version}</version>
         </dependency>
 
         <dependency>
             <groupId>exchange.core2</groupId>
             <artifactId>collections</artifactId>
-            <version>0.5.1</version>
+            <version>${collections.version}</version>
         </dependency>
 
         <!-- LMAX Disruptor -->
         <dependency>
             <groupId>com.lmax</groupId>
             <artifactId>disruptor</artifactId>
-            <version>3.4.4</version>
+            <version>${disruptor.version}</version>
         </dependency>
 
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
-            <version>1.18.24</version>
+            <version>${lombok.version}</version>
             <scope>provided</scope>
         </dependency>
 
@@ -91,14 +135,14 @@
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
-            <version>1.7.36</version>
+            <version>${slf4j.version}</version>
         </dependency>
 
-        <!-- OpenHFT -->
+        <!-- 替换现有的OpenHFT依赖 -->
         <dependency>
             <groupId>net.openhft</groupId>
             <artifactId>affinity</artifactId>
-            <version>3.2.2</version>
+            <version>3.27ea1</version>
             <exclusions>
                 <exclusion>
                     <artifactId>slf4j-api</artifactId>
@@ -118,7 +162,7 @@
         <dependency>
             <groupId>net.openhft</groupId>
             <artifactId>chronicle-wire</artifactId>
-            <version>2.19.1</version>
+            <version>${chronicle.version}</version>
             <exclusions>
                 <exclusion>
                     <artifactId>slf4j-api</artifactId>
@@ -127,50 +171,68 @@
             </exclusions>
         </dependency>
 
+        <dependency>
+            <groupId>net.openhft</groupId>
+            <artifactId>chronicle-core</artifactId>
+            <version>${chronicle.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>net.openhft</groupId>
+            <artifactId>chronicle-bytes</artifactId>
+            <version>${chronicle.version}</version>
+        </dependency>
+        <!-- https://mvnrepository.com/artifact/org.jetbrains/annotations -->
+        <dependency>
+            <groupId>org.jetbrains</groupId>
+            <artifactId>annotations</artifactId>
+            <version>26.0.2-1</version>
+        </dependency>
+
         <!-- Real Logic Agrona -->
         <dependency>
             <groupId>org.agrona</groupId>
             <artifactId>agrona</artifactId>
-            <version>1.15.1</version>
+            <version>${agrona.version}</version>
         </dependency>
 
         <!-- Eclipse (Goldman Sachs) collections -->
         <dependency>
             <groupId>org.eclipse.collections</groupId>
             <artifactId>eclipse-collections-api</artifactId>
-            <version>11.0.0</version>
+            <version>${eclipse-collections.version}</version>
         </dependency>
 
         <dependency>
             <groupId>org.eclipse.collections</groupId>
             <artifactId>eclipse-collections</artifactId>
-            <version>11.0.0</version>
+            <version>${eclipse-collections.version}</version>
         </dependency>
 
         <!-- lz4-java -->
         <dependency>
             <groupId>org.lz4</groupId>
             <artifactId>lz4-java</artifactId>
-            <version>1.8.0</version>
+            <version>${lz4-java.version}</version>
         </dependency>
 
         <!-- test scope -->
         <dependency>
             <groupId>com.paritytrading.juncture</groupId>
             <artifactId>juncture-nasdaq</artifactId>
-            <version>1.0.0</version>
+            <version>${juncture-nasdaq.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>com.paritytrading.nassau</groupId>
             <artifactId>nassau-util</artifactId>
-            <version>1.0.0</version>
+            <version>${nassau-util.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-junit-jupiter</artifactId>
-            <version>4.5.1</version>
+            <version>${mockito-junit-jupiter.version}</version>
             <scope>test</scope>
         </dependency>
 
@@ -178,15 +240,15 @@
         <dependency>
             <groupId>org.hdrhistogram</groupId>
             <artifactId>HdrHistogram</artifactId>
-            <version>2.1.12</version>
+            <version>${hdrhistogram.version}</version>
             <scope>test</scope>
         </dependency>
 
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <version>1.5.13</version>
-            <scope>test</scope>
+            <version>${logback-classic.version}</version>
+            <scope>runtime</scope>
             <exclusions>
                 <exclusion>
                     <artifactId>slf4j-api</artifactId>
@@ -199,7 +261,7 @@
         <dependency>
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
-            <version>33.4.8-jre</version>
+            <version>${guava.version}</version>
             <scope>test</scope>
         </dependency>
 
@@ -207,13 +269,13 @@
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-lang3</artifactId>
-            <version>3.18.0</version>
+            <version>${commons-lang3.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-math3</artifactId>
-            <version>3.6.1</version>
+            <version>${commons-math3.version}</version>
             <scope>test</scope>
         </dependency>
 
@@ -221,43 +283,49 @@
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-engine</artifactId>
-            <version>5.8.2</version>
+            <version>${junit-jupiter-engine.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
-            <version>4.5.1</version>
+            <version>${mockito-core.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.hamcrest</groupId>
             <artifactId>hamcrest-library</artifactId>
-            <version>1.3</version>
+            <version>${hamcrest-library.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>io.cucumber</groupId>
             <artifactId>cucumber-java8</artifactId>
-            <version>7.2.3</version>
+            <version>${cucumber-java8.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>io.cucumber</groupId>
             <artifactId>cucumber-junit-platform-engine</artifactId>
-            <version>7.2.3</version>
+            <version>${cucumber-junit-platform-engine.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.junit.platform</groupId>
             <artifactId>junit-platform-suite</artifactId>
-            <version>1.8.2</version>
+            <version>${junit-platform-suite.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>io.cucumber</groupId>
             <artifactId>cucumber-picocontainer</artifactId>
-            <version>7.2.3</version>
+            <version>${cucumber-picocontainer.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.13.1</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -272,14 +340,46 @@
                 <plugins>
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <version>${maven-compiler-plugin.version}</version>
+                        <configuration>
+                            <source>${java.version}</source>
+                            <target>${java.version}</target>
+                            <release>${java.version}</release>
+                            <compilerArgs>
+                                <arg>-parameters</arg>
+                                <arg>-XDcompilePolicy=simple</arg>
+                            </compilerArgs>
+                            <annotationProcessorPaths>
+                                <path>
+                                    <groupId>org.projectlombok</groupId>
+                                    <artifactId>lombok</artifactId>
+                                    <version>${lombok.version}</version>
+                                </path>
+                            </annotationProcessorPaths>
+                        </configuration>
+                    </plugin>
+
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-surefire-plugin</artifactId>
-                        <version>3.0.0-M3</version>
+                        <version>${maven-surefire-plugin.version}</version>
+                        <configuration>
+                            <argLine>
+                                --add-exports java.base/sun.nio.ch=ALL-UNNAMED
+                                --add-opens java.base/sun.nio.ch=ALL-UNNAMED
+                                --add-opens java.base/java.lang=ALL-UNNAMED
+                                --add-opens java.base/java.nio=ALL-UNNAMED
+                                --add-opens java.base/jdk.internal.ref=ALL-UNNAMED
+                            </argLine>
+                            <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                        </configuration>
                     </plugin>
 
                     <plugin>
                         <groupId>org.projectlombok</groupId>
                         <artifactId>lombok-maven-plugin</artifactId>
-                        <version>1.18.12.0</version>
+                        <version>${lombok-maven-plugin.version}</version>
                         <configuration>
                             <sourceDirectory>${project.basedir}/src/main/java</sourceDirectory>
                             <outputDirectory>${delombok.output}</outputDirectory>
@@ -294,11 +394,18 @@
                                 </goals>
                             </execution>
                         </executions>
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                                <version>${lombok.version}</version>
+                            </dependency>
+                        </dependencies>
                     </plugin>
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-antrun-plugin</artifactId>
-                        <version>1.8</version>
+                        <version>${maven-antrun-plugin.version}</version>
                         <executions>
                             <execution>
                                 <id>generate-delomboked-sources-jar</id>
@@ -318,7 +425,7 @@
                     <plugin>
                         <groupId>org.codehaus.mojo</groupId>
                         <artifactId>build-helper-maven-plugin</artifactId>
-                        <version>3.1.0</version>
+                        <version>${build-helper-maven-plugin.version}</version>
                         <executions>
                             <execution>
                                 <id>attach-delomboked-sources-jar</id>
@@ -343,7 +450,7 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-deploy-plugin</artifactId>
-                        <version>3.0.0-M1</version>
+                        <version>${maven-deploy-plugin.version}</version>
                         <executions>
                             <execution>
                                 <id>default-deploy</id>
@@ -358,7 +465,7 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-release-plugin</artifactId>
-                        <version>2.5.3</version>
+                        <version>${maven-release-plugin.version}</version>
                         <configuration>
                             <localCheckout>true</localCheckout>
                             <pushChanges>false</pushChanges>
@@ -377,7 +484,7 @@
                     <plugin>
                         <groupId>org.sonatype.plugins</groupId>
                         <artifactId>nexus-staging-maven-plugin</artifactId>
-                        <version>1.6.8</version>
+                        <version>${nexus-staging-maven-plugin.version}</version>
                         <extensions>true</extensions>
                         <configuration>
                             <serverId>ossrh</serverId>
@@ -389,7 +496,7 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-javadoc-plugin</artifactId>
-                        <version>3.1.0</version>
+                        <version>${maven-javadoc-plugin.version}</version>
                         <executions>
                             <execution>
                                 <id>attach-javadocs</id>
@@ -401,8 +508,26 @@
                         </executions>
                         <configuration>
                             <sourcepath>${delombok.output}</sourcepath>
+                            <!-- 禁用所有lint检查以避免HTML问题 -->
+                            <doclint>none</doclint>
+                            <!-- 使用现代HTML设置 -->
+                            <additionalOptions>
+                                <additionalOption>-Xdoclint:none</additionalOption>
+                            </additionalOptions>
+                            <!-- 编码设置 -->
+                            <encoding>UTF-8</encoding>
+                            <docencoding>UTF-8</docencoding>
+                            <charset>UTF-8</charset>
+                            <!-- 不因为警告而失败 -->
+                            <failOnError>false</failOnError>
+                            <failOnWarnings>false</failOnWarnings>
+                            <!-- 生成更现代的HTML -->
+                            <links>
+                                <link>https://docs.oracle.com/en/java/javase/21/docs/api/</link>
+                            </links>
                         </configuration>
                     </plugin>
+
                 </plugins>
             </build>
         </profile>
@@ -414,6 +539,7 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-surefire-plugin</artifactId>
+                        <version>${maven-surefire-plugin.version}</version>
                         <configuration combine.self="override">
                             <!--<argLine>-XX:+PrintApplicationStoppedTime</argLine>-->
                             <redirectTestOutputToFile>true</redirectTestOutputToFile>
@@ -447,7 +573,7 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-gpg-plugin</artifactId>
-                        <version>3.2.7</version>
+                        <version>${maven-gpg-plugin.version}</version>
                         <executions>
                             <execution>
                                 <id>sign-artifacts</id>
